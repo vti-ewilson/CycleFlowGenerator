@@ -79,9 +79,16 @@ namespace CycleFlowGenerator {
 		private int lowestY = 0;
 		private int offsetX = 250;
 		private int offsetY = 150;
+		string canvasPath;
 
 		public CycleFlowGenerator(string classFolder, string flowFile) {
-			writer = new StreamWriter("C:\\Users\\ewilson\\Documents\\Obsidian Vault\\Generated\\" + flowFile + ".canvas");
+
+			string docFolder = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+			docFolder += "\\Obsidian Vault\\Generated\\";
+			Directory.CreateDirectory(docFolder);
+			canvasPath = docFolder + flowFile + ".canvas";
+
+			writer = new StreamWriter(canvasPath);
 			lines = File.ReadAllLines(classFolder + "\\CycleSteps.cs");
 			mcLines = File.ReadAllLines(classFolder + "\\ManualCommands.cs");
 
@@ -364,7 +371,7 @@ namespace CycleFlowGenerator {
 			writer.Close();
 		}
 
-		public void Generate() {
+		public string Generate() {
 			int parentX = 0;
 
 			ReadAllSteps();
@@ -395,6 +402,7 @@ namespace CycleFlowGenerator {
 			
 			WriteToCanvas();
 
+			return canvasPath;
 		}
 
 		public void printAllSteps() {
@@ -421,17 +429,23 @@ namespace CycleFlowGenerator {
 	internal class Program {
 
 		static void Main(string[] args) {
-			string classFolder = args[0];
-			string flowFile = args[1];
+			string classFolder, flowFile;
+
+			Console.Write("Enter path to Classes folder: ");
+			classFolder = Console.ReadLine().Trim('"');
+
+			Console.Write("Enter name of Obsidian canvas file: ");
+			flowFile = Console.ReadLine();
 
 			CycleFlowGenerator generator = new CycleFlowGenerator(classFolder, flowFile);
 
 
-			generator.Generate();
+			string path = generator.Generate();
 
 			Console.WriteLine(generator.totalEdges.ToString());
 
-			Thread.Sleep(100000);
+			Console.WriteLine("Flow chart created at: " + path + "\n\npress enter to close.");
+			Console.ReadLine();
 		}
 	}
 }
