@@ -1,0 +1,8 @@
+﻿Idle
+Reset
+NotEnergized
+Disabled
+ProcessControlCycleStep
+ReadyForSequence
+ResetComplete
+TestAborted
