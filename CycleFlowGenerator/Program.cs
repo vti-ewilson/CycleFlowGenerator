@@ -9,9 +9,15 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Text.RegularExpressions;
 using System.Threading;
+using Microsoft.SqlServer.Server;
 
 namespace CycleFlowGenerator {
 
+	class ManualCommands
+	{
+		string name;
+		List<Step> startingSteps;
+	}
 
 	class Edge {
 		public Edge(Step from, Step to, string fromSide, string toSide, string label, int id) {
@@ -32,10 +38,10 @@ namespace CycleFlowGenerator {
 	}
 
 	class Step {
-		public Step(string text, int height, int id, int color, bool parsed, bool visited, bool isParent, bool placed)
+		public Step(string text, int height, int id, string color, bool parsed, bool visited, bool isParent, bool placed)
 			: this(text, height, (15 * text.Length) + 85, id, color, parsed, visited, isParent, placed) {}
 
-		public Step(string text, int height, int width, int id, int color, bool parsed, bool visited, bool isParent, bool placed) {
+		public Step(string text, int height, int width, int id, string color, bool parsed, bool visited, bool isParent, bool placed) {
 			this.text = text;
 			this.width = (15 * text.Length) + 85;
 			this.height = height;
@@ -54,7 +60,7 @@ namespace CycleFlowGenerator {
 		public int y;
 		public int width;
 		public int height;
-		public int color;
+		public string color;
 		public List<Edge> edges = new List<Edge>();
 		public Step parent;
 		public List<Step> leftChildren = new List<Step>();
@@ -80,13 +86,28 @@ namespace CycleFlowGenerator {
 		private int offsetX = 250;
 		private int offsetY = 150;
 		string canvasPath;
+		string saveFolder;
+		Random colorGenerator = new Random();
 
 		public CycleFlowGenerator(string classFolder, string flowFile) {
 
-			string docFolder = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
-			docFolder += "\\Obsidian Vault\\Generated\\";
-			Directory.CreateDirectory(docFolder);
-			canvasPath = docFolder + flowFile + ".canvas";
+			try
+			{
+				List<string> savePath = File.ReadLines("../../SavePath.txt").ToList();
+				if(savePath.Count <= 0) throw new Exception("");
+				saveFolder = savePath[0].Trim('"', '\\');
+			}
+			catch (Exception ex)
+			{ 
+				string docFolder = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+				saveFolder = docFolder + "\\Obsidian Vault\\Generated";
+			}
+
+			saveFolder += "\\" + flowFile;
+			Directory.CreateDirectory(saveFolder);
+			Directory.CreateDirectory(saveFolder + "\\Cycles");
+			canvasPath = saveFolder + "\\" + flowFile + ".canvas";
+
 
 			writer = new StreamWriter(canvasPath);
 			lines = File.ReadAllLines(classFolder + "\\CycleSteps.cs");
@@ -94,18 +115,27 @@ namespace CycleFlowGenerator {
 
 			ReadAllSteps();
 
-			Step cycleFail = new Step("CycleFail", 300, 2000, getNextID(), 1, true, true, true, true);
+			Step cycleFail = new Step("CycleFail", 300, 2000, getNextID(), "1", true, true, true, true);
 			allSteps.Add(cycleFail.text, cycleFail);
 
-			Step cyclePass = new Step("CyclePass", 300, 2000, getNextID(), 4, true, true, true, true);
+			Step cyclePass = new Step("CyclePass", 300, 2000, getNextID(), "4", true, true, true, true);
 			allSteps.Add(cyclePass.text, cyclePass);
 
 			printAllSteps();
 		}
 
 		public void ReadManualCommands() {
-			string line;
-			Regex rx = new Regex(@"(\w+)(,)");
+			Regex cmdPattern = new Regex(@"public virtual void (\w+)\(\)");
+			foreach(var line in mcLines)
+			{
+
+			}
+		}
+
+		public string GetRandomColor()
+		{
+			var color = String.Format("#{0:X6}", colorGenerator.Next(0x1000000));
+			return color;
 		}
 
 		// Reads initial CycleStep declarations and creates Step objects
@@ -115,8 +145,8 @@ namespace CycleFlowGenerator {
 			Regex rx2 = new Regex(@"(\w+)(;)");
 			MatchCollection matches;
 			bool inSteps = false;
-			int fileInd = 0;
-			List<string> excludedSteps = new List<string>();
+			int fileInd;
+			List<string> excludedSteps;
 
 			excludedSteps = File.ReadAllLines("../../ExcludedSteps.txt").ToList();
 
@@ -136,7 +166,7 @@ namespace CycleFlowGenerator {
 						Console.WriteLine(match.Groups[1].Value);
 						if(match.Groups[1].Value[0] == '/') break;
 						if(!allSteps.ContainsKey(match.Groups[1].Value) && !excludedSteps.Contains(match.Groups[1].Value)) {
-							Step step = new Step(match.Groups[1].Value, boxHeight, getNextID(), 0, false, false, true, false);
+							Step step = new Step(match.Groups[1].Value, boxHeight, getNextID(), GetRandomColor(), false, false, true, false); ;
 
 							allSteps.Add(step.text, step);
 						}
@@ -147,7 +177,7 @@ namespace CycleFlowGenerator {
 						Console.WriteLine(match.Groups[1].Value);
 						if(match.Groups[1].Value[0] == '/') break;
 						if(!allSteps.ContainsKey(match.Groups[1].Value)) {
-							Step step = new Step(match.Groups[1].Value, boxHeight, getNextID(), 0, false, false, true, false);
+							Step step = new Step(match.Groups[1].Value, boxHeight, getNextID(), GetRandomColor(), false, false, true, false);
 							allSteps.Add(step.text, step);
 						}
 
@@ -182,6 +212,7 @@ namespace CycleFlowGenerator {
 					if(line[i] == '{') openBrackets++;
 					if(line[i] == '}') closeBrackets++;
 				}
+				if(openBrackets == closeBrackets && openBrackets > 0) inFunction = false;
 
 				// CyclePass found
 				if(rxPass.IsMatch(line)) {
@@ -234,11 +265,7 @@ namespace CycleFlowGenerator {
 					// Parse found step
 					Parse(allSteps[match.Groups[1].Value]);
 				}
-
-				if(openBrackets == closeBrackets && openBrackets > 0) inFunction = false;
-
 			}
-
 		}
 
 		// Searches file for a step's _Passed and _Failed function
@@ -349,6 +376,8 @@ namespace CycleFlowGenerator {
 			writer.Write("\t],\n\t\"edges\":[\n");
 
 			int edges = 0;
+			int numEdges = 0;
+			foreach(var step in allSteps) numEdges += step.Value.edges.Count;
 			foreach(var step in allSteps) {
 				for(int j = 0; j < step.Value.edges.Count; j++) {
 					Edge edge = step.Value.edges[j];
@@ -359,10 +388,11 @@ namespace CycleFlowGenerator {
 					writer.Write("\",\"toNode\":\"" + edge.to.id.ToString("X16"));
 					writer.Write("\",\"toSide\":\"" + edge.toSide);
 					writer.Write("\",\"label\":\"" + edge.label + "\"}");
-					if(!(j == step.Value.edges.Count-1 && step.Value == allSteps.Values.Last())) {
+					edges++;
+					if(edges != numEdges)
+					{
 						writer.Write(",");
 					}
-					edges++;
 					writer.Write("\n");
 				}
 			}
@@ -383,7 +413,6 @@ namespace CycleFlowGenerator {
 			foreach(var step in allSteps) {
 				if(step.Value.isParent) startingSteps.Add(step.Key, step.Value);
 			}
-			//startingSteps.Add(allSteps["StabilizeTankPressure"].text, allSteps["StabilizeTankPressure"]);
 
 			printAllSteps();
 
