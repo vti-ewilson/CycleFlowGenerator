@@ -410,8 +410,22 @@ namespace CycleFlowGenerator {
 				Parse(step.Value);
 			}
 
+			List<string> toRemove = new List<string>();
 			foreach(var step in allSteps) {
-				if(step.Value.isParent) startingSteps.Add(step.Key, step.Value);
+				if(step.Value.leftChildren.Count == 0 && step.Value.rightChildren.Count == 0)
+				{ // Hide steps without children, cant remove in foreach
+					toRemove.Add(step.Key);
+				}
+				else
+				{ // Add parentless steps to startingSteps
+					if(step.Value.isParent) startingSteps.Add(step.Key, step.Value);
+				}
+			}
+
+			// remove here instead
+			foreach(string step in toRemove)
+			{
+				if(step != "CyclePass" && step != "CycleFail") allSteps.Remove(step);
 			}
 
 			printAllSteps();
