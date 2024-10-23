@@ -10,13 +10,15 @@ using System.Threading.Tasks;
 using System.Text.RegularExpressions;
 using System.Threading;
 using Microsoft.SqlServer.Server;
+using static System.Net.Mime.MediaTypeNames;
 
 namespace CycleFlowGenerator {
 
-	class ManualCommands
+	class ManualCommand
 	{
-		string name;
-		List<Step> startingSteps;
+		public string name;
+		public SortedDictionary<string, Step> startingSteps;
+		public List<Edge> edges = new List<Edge>();
 	}
 
 	class Edge {
@@ -74,6 +76,7 @@ namespace CycleFlowGenerator {
 	class CycleFlowGenerator {
 		public SortedDictionary<string, Step> startingSteps = new SortedDictionary<string, Step>();
 		public SortedDictionary<string, Step> allSteps = new SortedDictionary<string, Step>();
+		public List<ManualCommand> manualCommands = new List<ManualCommand>();
 		public int totalEdges;
 		StreamWriter writer;
 		public int boxWidth = 300;
@@ -87,6 +90,7 @@ namespace CycleFlowGenerator {
 		private int offsetY = 150;
 		string canvasPath;
 		string saveFolder;
+		string cycleFolder;
 		Random colorGenerator = new Random();
 
 		public CycleFlowGenerator(string classFolder, string flowFile) {
@@ -104,12 +108,12 @@ namespace CycleFlowGenerator {
 			}
 
 			saveFolder += "\\" + flowFile;
+			cycleFolder = saveFolder + "\\Cycles";
 			Directory.CreateDirectory(saveFolder);
-			Directory.CreateDirectory(saveFolder + "\\Cycles");
+			Directory.CreateDirectory(cycleFolder);
 			canvasPath = saveFolder + "\\" + flowFile + ".canvas";
 
 
-			writer = new StreamWriter(canvasPath);
 			lines = File.ReadAllLines(classFolder + "\\CycleSteps.cs");
 			mcLines = File.ReadAllLines(classFolder + "\\ManualCommands.cs");
 
@@ -122,13 +126,73 @@ namespace CycleFlowGenerator {
 			allSteps.Add(cyclePass.text, cyclePass);
 
 			printAllSteps();
+
+			ReadManualCommands();
 		}
 
 		public void ReadManualCommands() {
-			Regex cmdPattern = new Regex(@"public virtual void (\w+)\(\)");
-			foreach(var line in mcLines)
-			{
+			bool inFunction = false;
+			int openBrackets;
+			int closeBrackets;
+			Regex cmdPattern = new Regex(@"public \w* *void (\w+)\(\)");
+			Regex rxStart = new Regex(@"(\w+)(\.Start\(\);)");
+			ManualCommand command;
+			SortedDictionary<string, Step> tempStartingSteps;
 
+			for(int fileInd = 0; fileInd < mcLines.Length; fileInd++)
+			{
+				string line = mcLines[fileInd];
+				if(line.Contains("ZeroTransducer"))
+				{
+
+				}
+				openBrackets = 0;
+				closeBrackets = 0;
+
+				var cmdMatch = cmdPattern.Match(line);
+				if(cmdMatch.Success)
+				{
+					if(cmdMatch.Groups[1].Value == "Start")
+					{
+
+					}
+					inFunction = true;
+					openBrackets = line.Count(c => c == '{');
+					tempStartingSteps = new SortedDictionary<string, Step>();
+					while(inFunction) // Iterate through lines in Manual command function
+					{
+						if(fileInd < mcLines.Length)
+						{
+							fileInd++;
+							line = mcLines[fileInd];
+						}
+						else break;
+
+						for(int i = 0; i < line.Length; i++)
+						{
+							if(line[i] == '{') openBrackets++;
+							if(line[i] == '}') closeBrackets++;
+						}
+						if(openBrackets == closeBrackets && openBrackets > 0) inFunction = false;
+
+						var matches = rxStart.Matches(line);
+						foreach(Match match in matches)
+						{
+							string stepName = match.Groups[1].Value;
+							if(allSteps.ContainsKey(stepName))
+							{
+								if(!tempStartingSteps.ContainsKey(stepName)) tempStartingSteps.Add(stepName, allSteps[stepName]);
+							}
+						}
+					}
+					if(tempStartingSteps.Count > 0) // Create ManualCommand if it starts any CycleSteps
+					{
+						command = new ManualCommand();
+						command.name = cmdMatch.Groups[1].Value;
+						command.startingSteps = tempStartingSteps;
+						manualCommands.Add(command);
+					}
+				}
 			}
 		}
 
@@ -197,9 +261,9 @@ namespace CycleFlowGenerator {
 			int closeBrackets = 0;
 			bool inFunction = true;
 			string line;
-			Regex rx = new Regex(@"(\w+)(\.Start\(\);)");
-			Regex rxPass = new Regex(@"(CyclePass\()([\s\S]+)?\)");
-			Regex rxFail = new Regex(@"(CycleFail\()([\s\S]+)?\)");
+			Regex rxStart = new Regex(@"(\w+)(\.Start\(\);)");
+			Regex rxCyclePass = new Regex(@"(CyclePass\()([\s\S]+)?\)");
+			Regex rxCycleFail = new Regex(@"(CycleFail\()([\s\S]+)?\)");
 			MatchCollection matches;
 
 			while(inFunction) {
@@ -215,7 +279,7 @@ namespace CycleFlowGenerator {
 				if(openBrackets == closeBrackets && openBrackets > 0) inFunction = false;
 
 				// CyclePass found
-				if(rxPass.IsMatch(line)) {
+				if(rxCyclePass.IsMatch(line)) {
 					Console.WriteLine("adding: CyclePass");
 					if(pass) {
 						step.rightChildren.Add(allSteps["CyclePass"]);
@@ -226,7 +290,7 @@ namespace CycleFlowGenerator {
 				}
 
 				// CycleFail found
-				if(rxFail.IsMatch(line)) {
+				if(rxCycleFail.IsMatch(line)) {
 					Console.WriteLine("adding: CycleFail");
 					if(pass) {
 						step.rightChildren.Add(allSteps["CycleFail"]);
@@ -236,7 +300,7 @@ namespace CycleFlowGenerator {
 				}
 
 				// Step.Start() found
-				matches = rx.Matches(line);
+				matches = rxStart.Matches(line);
 				foreach(Match match in matches) {
 					//Console.WriteLine(match.Groups[1].Value);
 					if(match.Groups[1].Value == "CycleComplete") {
@@ -281,9 +345,9 @@ namespace CycleFlowGenerator {
 
 			for(fileInd = 0; fileInd < lines.Length; fileInd++){
 				line = lines[fileInd];
-				//Console.WriteLine("line: " + line);
 
-				if(line.Contains(passFunction)) {
+				Regex passReg = new Regex(@"\s" + Regex.Escape(passFunction));
+				if(passReg.IsMatch(line)) {
 					Console.WriteLine("line: " + line);
 					if(line.Contains('{')) {
 						FindNextStep(step, true, 1, fileInd);
@@ -299,7 +363,8 @@ namespace CycleFlowGenerator {
 			for(fileInd = 0; fileInd < lines.Length; fileInd++) {
 				line = lines[fileInd];
 
-				if(line.Contains(failFunction)) {
+				Regex failReg = new Regex(@"\s" + Regex.Escape(failFunction));
+				if(failReg.IsMatch(line)) {
 					if(line.Contains('{')) {
 						FindNextStep(step, false, 1, fileInd);
 					} else {
@@ -358,47 +423,84 @@ namespace CycleFlowGenerator {
 		}
 
 		// Iterate through steps and write to canvas file
-		private void WriteToCanvas() {
+		private void WriteToCanvas(string entryPoint) {
 			writer.Write("{\n\t\"nodes\":[\n");
-			foreach(var step in allSteps) {
-				writer.Write("\t\t{\"type\":\"text\",\"text\":\"" + step.Value.text);
-				writer.Write("\",\"id\":\"" + step.Value.id.ToString("X16"));
-				writer.Write("\",\"x\":" + step.Value.x.ToString());
-				writer.Write(",\"y\":" + step.Value.y.ToString());
-				writer.Write(",\"width\":" + step.Value.width.ToString());
-				writer.Write(",\"height\":" + step.Value.height.ToString());
-				writer.Write(",\"color\":\"" + step.Value.color.ToString() + "\"}");
-				if(step.Value != allSteps.Values.Last()) {
-					writer.Write(",");
-				}
+
+			if(entryPoint != null)
+			{
+				writer.Write("\t\t{\"type\":\"text\",\"text\":\"" + entryPoint);
+				writer.Write("\",\"id\":\"" + getNextID().ToString("X16"));
+				writer.Write("\",\"x\":0");
+				writer.Write(",\"y\":-200");
+				writer.Write(",\"width\":" + ((15 * entryPoint.Length) + 85).ToString());
+				writer.Write(",\"height\":" + boxHeight.ToString());
+				writer.Write(",\"color\":\"3\"}");
+				writer.Write(",");
 				writer.Write("\n");
 			}
-			writer.Write("\t],\n\t\"edges\":[\n");
 
-			int edges = 0;
-			int numEdges = 0;
-			foreach(var step in allSteps) numEdges += step.Value.edges.Count;
-			foreach(var step in allSteps) {
-				for(int j = 0; j < step.Value.edges.Count; j++) {
-					Edge edge = step.Value.edges[j];
-
-					writer.Write("\t\t{\"id\":\"" + edge.id.ToString("X16"));
-					writer.Write("\",\"fromNode\":\"" + edge.from.id.ToString("X16"));
-					writer.Write("\",\"fromSide\":\"" + edge.fromSide);
-					writer.Write("\",\"toNode\":\"" + edge.to.id.ToString("X16"));
-					writer.Write("\",\"toSide\":\"" + edge.toSide);
-					writer.Write("\",\"label\":\"" + edge.label + "\"}");
-					edges++;
-					if(edges != numEdges)
+			var placedSteps = allSteps.Where(s => s.Value.placed).ToList();
+			//foreach(var step in placedSteps) {
+			for(int i = 0; i < placedSteps.Count; i++) { 
+				var step = placedSteps[i];
+				if(step.Value.placed)
+				{
+					writer.Write("\t\t{\"type\":\"text\",\"text\":\"" + step.Value.text);
+					writer.Write("\",\"id\":\"" + step.Value.id.ToString("X16"));
+					writer.Write("\",\"x\":" + step.Value.x.ToString());
+					writer.Write(",\"y\":" + step.Value.y.ToString());
+					writer.Write(",\"width\":" + step.Value.width.ToString());
+					writer.Write(",\"height\":" + step.Value.height.ToString());
+					writer.Write(",\"color\":\"" + step.Value.color.ToString() + "\"}");
+					if(i != placedSteps.Count - 1)
 					{
 						writer.Write(",");
 					}
 					writer.Write("\n");
 				}
 			}
+			writer.Write("\t],\n\t\"edges\":[\n");
+
+			int edges = 0;
+			int numEdges = 0;
+			foreach(var step in placedSteps)
+			{
+				numEdges += step.Value.edges.Count;
+			}
+			foreach(var step in placedSteps) {
+				if(step.Value.placed)
+				{
+					for(int j = 0; j < step.Value.edges.Count; j++)
+					{
+						Edge edge = step.Value.edges[j];
+
+						writer.Write("\t\t{\"id\":\"" + edge.id.ToString("X16"));
+						writer.Write("\",\"fromNode\":\"" + edge.from.id.ToString("X16"));
+						writer.Write("\",\"fromSide\":\"" + edge.fromSide);
+						writer.Write("\",\"toNode\":\"" + edge.to.id.ToString("X16"));
+						writer.Write("\",\"toSide\":\"" + edge.toSide);
+						writer.Write("\",\"label\":\"" + edge.label + "\"}");
+						edges++;
+						if(edges != numEdges)
+						{
+							writer.Write(",");
+						}
+						writer.Write("\n");
+					}
+				}
+			}
 			writer.Write("\t]\n}");
 
 			writer.Close();
+		}
+
+		private void ResetNodePositions()
+		{
+			foreach(var item in allSteps)
+			{
+				item.Value.placed = false;
+				item.Value.visited = false;
+			}
 		}
 
 		public string Generate() {
@@ -411,7 +513,8 @@ namespace CycleFlowGenerator {
 			}
 
 			List<string> toRemove = new List<string>();
-			foreach(var step in allSteps) {
+			foreach(var step in allSteps)
+			{
 				if(step.Value.leftChildren.Count == 0 && step.Value.rightChildren.Count == 0)
 				{ // Hide steps without children, cant remove in foreach
 					toRemove.Add(step.Key);
@@ -425,7 +528,7 @@ namespace CycleFlowGenerator {
 			// remove here instead
 			foreach(string step in toRemove)
 			{
-				if(step != "CyclePass" && step != "CycleFail") allSteps.Remove(step);
+				//if(step != "CyclePass" && step != "CycleFail") allSteps.Remove(step);
 			}
 
 			printAllSteps();
@@ -442,9 +545,26 @@ namespace CycleFlowGenerator {
 			allSteps["CycleFail"].x = lowestX - 1100;
 			allSteps["CycleFail"].y = lowestY + 500;
 
-			
-			WriteToCanvas();
+			writer = new StreamWriter(canvasPath);
+			WriteToCanvas(null);
 
+			foreach(var cmd in manualCommands)
+			{
+				ResetNodePositions();
+				writer = new StreamWriter(cycleFolder + "\\" + cmd.name + ".canvas");
+
+				parentX = 0;
+				foreach(var step in cmd.startingSteps)
+				{
+					step.Value.x = parentX;
+					step.Value.y = 0;
+					step.Value.placed = true;
+					parentX = PlaceNodes(step.Value) + 1500;
+				}
+
+				WriteToCanvas(cmd.name);
+			}
+			
 			return canvasPath;
 		}
 
