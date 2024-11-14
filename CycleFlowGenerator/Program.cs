@@ -9,13 +9,6 @@ using System.Text.RegularExpressions;
 namespace CycleFlowGenerator
 {
 
-	class ManualCommand
-	{
-		public string name;
-		public SortedDictionary<string, Step> startingSteps;
-		public List<Edge> edges = new List<Edge>();
-	}
-
 	class Edge
 	{
 		public Edge(Step fromStep, Step toStep, string fromSide, string toSide, string label, int id)
@@ -76,17 +69,19 @@ namespace CycleFlowGenerator
 		public Step parent;
 		public List<Step> leftChildren = new List<Step>();
 		public List<Step> rightChildren = new List<Step>();
+		public List<Step> entryStartingSteps = new List<Step>();
 		public bool parsed;
 		public bool visited;
 		public bool isParent;
 		public bool placed;
+		public bool entryPoint;
 	}
 
 	class CycleFlowGenerator
 	{
 		public SortedDictionary<string, Step> startingSteps = new SortedDictionary<string, Step>();
 		public SortedDictionary<string, Step> allSteps = new SortedDictionary<string, Step>();
-		public List<ManualCommand> manualCommands = new List<ManualCommand>();
+		public List<Step> entryPoints = new List<Step>();
 		public int totalEdges;
 		StreamWriter writer;
 		public int boxWidth = 300;
@@ -146,72 +141,29 @@ namespace CycleFlowGenerator
 
 		public void ReadManualCommands()
 		{
-			bool inFunction = false;
-			int openBrackets;
-			int closeBrackets;
 			Regex cmdPattern = new Regex(@"public \w* *void (\w+)\(\)");
-			Regex rxStart = new Regex(@"(\w+)(\.Start\(\);)");
-			ManualCommand command;
-			SortedDictionary<string, Step> tempStartingSteps;
+			Step command;
 
 			for(int fileInd = 0; fileInd < mcLines.Length; fileInd++)
 			{
 				string line = mcLines[fileInd];
-				if(line.Contains("ZeroTransducer"))
-				{
-
-				}
-				openBrackets = 0;
-				closeBrackets = 0;
 
 				var cmdMatch = cmdPattern.Match(line);
 				if(cmdMatch.Success)
 				{
-					if(cmdMatch.Groups[1].Value == "Start")
+					command = new Step(cmdMatch.Groups[1].Value, boxHeight, getNextID(), "3", false, false, true, false);
+					if(line.Contains('{'))
 					{
-
+						FindNextStep(command, "bottom", 1, fileInd, mcLines);
 					}
-					inFunction = true;
-					openBrackets = line.Count(c => c == '{');
-					tempStartingSteps = new SortedDictionary<string, Step>();
-					while(inFunction) // Iterate through lines in Manual command function
+					else
 					{
-						if(fileInd < mcLines.Length)
-						{
-							fileInd++;
-							line = mcLines[fileInd];
-						}
-						else break;
-
-						for(int i = 0; i < line.Length; i++)
-						{
-							if(line[i] == '{') openBrackets++;
-							if(line[i] == '}') closeBrackets++;
-						}
-						if(openBrackets == closeBrackets && openBrackets > 0) inFunction = false;
-
-						var matches = rxStart.Matches(line);
-						foreach(Match match in matches)
-						{
-							string stepName = match.Groups[1].Value;
-							if(allSteps.ContainsKey(stepName))
-							{
-								if(!tempStartingSteps.ContainsKey(stepName)) tempStartingSteps.Add(stepName, allSteps[stepName]);
-							}
-						}
+						FindNextStep(command, "bottom", 0, fileInd, mcLines);
 					}
-					if(tempStartingSteps.Count > 0) // Create ManualCommand if it starts any CycleSteps
-					{
-						command = new ManualCommand();
-						command.name = cmdMatch.Groups[1].Value;
-						command.startingSteps = tempStartingSteps;
-						command.edges = new List<Edge>();
-						foreach(var step in tempStartingSteps)
-						{
-							//command.edges.Add(new Edge())
-						}
-						manualCommands.Add(command);
-					}
+
+					if(command.entryStartingSteps.Count > 0)
+						entryPoints.Add(command);
+					
 				}
 			}
 		}
@@ -285,7 +237,7 @@ namespace CycleFlowGenerator
 		}
 
 		// Searches _Passed or _Failed for next step in cycle
-		private void FindNextStep(Step step, bool pass, int brackets, int fileInd)
+		private void FindNextStep(Step step, string side, int brackets, int fileInd, string[] fileLines)
 		{
 			int openBrackets = brackets;
 			int closeBrackets = 0;
@@ -299,10 +251,10 @@ namespace CycleFlowGenerator
 
 			while(inFunction)
 			{
-				if(fileInd < lines.Length)
+				if(fileInd < fileLines.Length)
 				{
 					fileInd++;
-					line = lines[fileInd];
+					line = fileLines[fileInd];
 				}
 				else break;
 				//Console.WriteLine("line in function: " + line);
@@ -317,13 +269,17 @@ namespace CycleFlowGenerator
 				if(rxCycleStart.IsMatch(line))
 				{
 					Console.WriteLine("adding: CycleStart");
-					if(pass)
+					if(side == "right")
 					{
 						step.rightChildren.Add(allSteps["CycleStart"]);
 					}
-					else
+					else if(side == "left")
 					{
 						step.leftChildren.Add(allSteps["CycleStart"]);
+					}
+					else if(side == "bottom")
+					{
+						step.entryStartingSteps.Add(allSteps["CycleStart"]);
 					}
 				}
 
@@ -331,13 +287,17 @@ namespace CycleFlowGenerator
 				if(rxCyclePass.IsMatch(line))
 				{
 					Console.WriteLine("adding: CyclePass");
-					if(pass)
+					if(side == "right")
 					{
 						step.rightChildren.Add(allSteps["CyclePass"]);
 					}
-					else
+					else if(side == "left")
 					{
 						step.leftChildren.Add(allSteps["CyclePass"]);
+					}
+					else if(side == "bottom")
+					{
+						step.entryStartingSteps.Add(allSteps["CyclePass"]);
 					}
 				}
 
@@ -345,13 +305,17 @@ namespace CycleFlowGenerator
 				if(rxCycleFail.IsMatch(line))
 				{
 					Console.WriteLine("adding: CycleFail");
-					if(pass)
+					if(side == "right")
 					{
 						step.rightChildren.Add(allSteps["CycleFail"]);
 					}
-					else
+					else if(side == "left")
 					{
 						step.leftChildren.Add(allSteps["CycleFail"]);
+					}
+					else if(side == "bottom")
+					{
+						step.entryStartingSteps.Add(allSteps["CycleFail"]);
 					}
 				}
 
@@ -368,7 +332,7 @@ namespace CycleFlowGenerator
 					Console.WriteLine("adding: " + match.Groups[1].Value);
 
 					// Add found step to list of children
-					if(pass)
+					if(side == "right")
 					{
 						try
 						{
@@ -379,11 +343,22 @@ namespace CycleFlowGenerator
 							continue;
 						}
 					}
-					else
+					else if(side == "left")
 					{
 						try
 						{
 							step.leftChildren.Add(allSteps[match.Groups[1].Value]);
+						}
+						catch(Exception e)
+						{
+							continue;
+						}
+					}
+					else if(side == "bottom")
+					{
+						try
+						{
+							step.entryStartingSteps.Add(allSteps[match.Groups[1].Value]);
 						}
 						catch(Exception e)
 						{
@@ -413,16 +388,16 @@ namespace CycleFlowGenerator
 			{
 				line = lines[fileInd];
 
-				if(rxCycleStart.IsMatch(line))
+				if(rxCycleStart.IsMatch(line) && !line.Contains(";"))
 				{
 					Console.WriteLine("line: " + line);
 					if(line.Contains('{'))
 					{
-						FindNextStep(step, true, 1, fileInd);
+						FindNextStep(step, "bottom", 1, fileInd, lines);
 					}
 					else
 					{
-						FindNextStep(step, true, 0, fileInd);
+						FindNextStep(step, "bottom", 0, fileInd, lines);
 					}
 					break;
 				}
@@ -451,11 +426,11 @@ namespace CycleFlowGenerator
 					Console.WriteLine("line: " + line);
 					if(line.Contains('{'))
 					{
-						FindNextStep(step, true, 1, fileInd);
+						FindNextStep(step, "right", 1, fileInd, lines);
 					}
 					else
 					{
-						FindNextStep(step, true, 0, fileInd);
+						FindNextStep(step, "right", 0, fileInd, lines);
 					}
 					break;
 				}
@@ -472,11 +447,11 @@ namespace CycleFlowGenerator
 				{
 					if(line.Contains('{'))
 					{
-						FindNextStep(step, false, 1, fileInd);
+						FindNextStep(step, "left", 1, fileInd, lines);
 					}
 					else
 					{
-						FindNextStep(step, false, 0, fileInd);
+						FindNextStep(step, "left", 0, fileInd, lines);
 					}
 					break;
 				}
@@ -488,6 +463,27 @@ namespace CycleFlowGenerator
 		{
 			if(step.visited) return step.x;
 			step.visited = true;
+			step.placed = true;
+
+			for(int i = 0; i < step.entryStartingSteps.Count; i++)
+			{
+				if(!step.entryStartingSteps[i].placed)
+				{
+					step.entryStartingSteps[i].x = step.x + (offsetX * 2 * i);
+					step.entryStartingSteps[i].y = step.y + (2*offsetY);
+					step.entryStartingSteps[i].placed = true;
+					if(step.entryStartingSteps[i].y > lowestY)
+					{
+						lowestY = step.entryStartingSteps[i].y;
+						lowestX = step.entryStartingSteps[i].x;
+					}
+					PlaceNodes(step.entryStartingSteps[i]);
+				}
+
+				step.edges.Add(new Edge(step, step.entryStartingSteps[i], "bottom", "top", "Start", getNextID()));
+				totalEdges++;
+			}
+
 			for(int i = 0; i < step.leftChildren.Count; i++)
 			{
 				if(!step.leftChildren[i].placed)
@@ -527,32 +523,18 @@ namespace CycleFlowGenerator
 
 				step.edges.Add(edge);
 				totalEdges++;
-
 			}
-
+			
 			return step.x;
 		}
 
 		// Iterate through steps and write to canvas file
-		private void WriteToCanvas(string entryPoint)
+		private void WriteToCanvas()
 		{
 			writer.Write("{\n\t\"nodes\":[\n");
 
-			if(entryPoint != null)
-			{
-				writer.Write("\t\t{\"type\":\"text\",\"text\":\"" + entryPoint);
-				writer.Write("\",\"id\":\"" + getNextID().ToString("X16"));
-				writer.Write("\",\"x\":0");
-				writer.Write(",\"y\":-200");
-				writer.Write(",\"width\":" + ((15 * entryPoint.Length) + 85).ToString());
-				writer.Write(",\"height\":" + boxHeight.ToString());
-				writer.Write(",\"color\":\"3\"}");
-				writer.Write(",");
-				writer.Write("\n");
-			}
-
 			var placedSteps = allSteps.Where(s => s.Value.placed).ToList();
-			//foreach(var step in placedSteps) {
+			
 			for(int i = 0; i < placedSteps.Count; i++)
 			{
 				var step = placedSteps[i];
@@ -666,23 +648,26 @@ namespace CycleFlowGenerator
 			allSteps["CycleFail"].y = lowestY + 500;
 
 			writer = new StreamWriter(canvasPath);
-			WriteToCanvas(null);
+			WriteToCanvas();
 
-			foreach(var cmd in manualCommands)
+			entryPoints.Add(allSteps["CycleStart"]);
+			foreach(var cmd in entryPoints)
 			{
+				if(!allSteps.ContainsKey(cmd.text)) allSteps.Add(cmd.text, cmd);
 				ResetNodePositions();
-				writer = new StreamWriter(cycleFolder + "\\" + cmd.name + ".canvas");
+				writer = new StreamWriter(cycleFolder + "\\" + cmd.text + ".canvas");
 
-				parentX = 0;
-				foreach(var step in cmd.startingSteps)
-				{
-					step.Value.x = parentX;
-					step.Value.y = 0;
-					step.Value.placed = true;
-					parentX = PlaceNodes(step.Value) + 1500;
-				}
+				cmd.x = 0;
+				cmd.y = 0;
+				PlaceNodes(cmd);
 
-				WriteToCanvas(cmd.name);
+				allSteps["CyclePass"].x = lowestX + 1100;
+				allSteps["CyclePass"].y = lowestY + 500;
+
+				allSteps["CycleFail"].x = lowestX - 1100;
+				allSteps["CycleFail"].y = lowestY + 500;
+
+				WriteToCanvas();
 			}
 
 			return canvasPath;
