@@ -2,17 +2,12 @@
 // Run from vs
 using System;
 using System.Collections.Generic;
-using System.ComponentModel;
 using System.IO;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using System.Text.RegularExpressions;
-using System.Threading;
-using Microsoft.SqlServer.Server;
-using static System.Net.Mime.MediaTypeNames;
 
-namespace CycleFlowGenerator {
+namespace CycleFlowGenerator
+{
 
 	class ManualCommand
 	{
@@ -21,8 +16,20 @@ namespace CycleFlowGenerator {
 		public List<Edge> edges = new List<Edge>();
 	}
 
-	class Edge {
-		public Edge(Step from, Step to, string fromSide, string toSide, string label, int id) {
+	class Edge
+	{
+		public Edge(Step fromStep, Step toStep, string fromSide, string toSide, string label, int id)
+		{
+			this.from = fromStep.id.ToString("X16");
+			this.to = toStep.id.ToString("X16");
+			this.fromSide = fromSide;
+			this.toSide = toSide;
+			this.label = label;
+			this.id = id;
+		}
+
+		public Edge(string from, string to, string fromSide, string toSide, string label, int id)
+		{
 			this.from = from;
 			this.to = to;
 			this.fromSide = fromSide;
@@ -31,19 +38,21 @@ namespace CycleFlowGenerator {
 			this.id = id;
 		}
 
-		public Step from;
-		public Step to;
+		public string from;
+		public string to;
 		public string fromSide;
 		public string toSide;
 		public string label;
 		public int id;
 	}
 
-	class Step {
+	class Step
+	{
 		public Step(string text, int height, int id, string color, bool parsed, bool visited, bool isParent, bool placed)
-			: this(text, height, (15 * text.Length) + 85, id, color, parsed, visited, isParent, placed) {}
+			: this(text, height, (15 * text.Length) + 85, id, color, parsed, visited, isParent, placed) { }
 
-		public Step(string text, int height, int width, int id, string color, bool parsed, bool visited, bool isParent, bool placed) {
+		public Step(string text, int height, int width, int id, string color, bool parsed, bool visited, bool isParent, bool placed)
+		{
 			this.text = text;
 			this.width = (15 * text.Length) + 85;
 			this.height = height;
@@ -73,7 +82,8 @@ namespace CycleFlowGenerator {
 		public bool placed;
 	}
 
-	class CycleFlowGenerator {
+	class CycleFlowGenerator
+	{
 		public SortedDictionary<string, Step> startingSteps = new SortedDictionary<string, Step>();
 		public SortedDictionary<string, Step> allSteps = new SortedDictionary<string, Step>();
 		public List<ManualCommand> manualCommands = new List<ManualCommand>();
@@ -93,7 +103,8 @@ namespace CycleFlowGenerator {
 		string cycleFolder;
 		Random colorGenerator = new Random();
 
-		public CycleFlowGenerator(string classFolder, string flowFile) {
+		public CycleFlowGenerator(string classFolder, string flowFile)
+		{
 
 			try
 			{
@@ -101,8 +112,8 @@ namespace CycleFlowGenerator {
 				if(savePath.Count <= 0) throw new Exception("");
 				saveFolder = savePath[0].Trim('"', '\\');
 			}
-			catch (Exception ex)
-			{ 
+			catch(Exception ex)
+			{
 				string docFolder = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
 				saveFolder = docFolder + "\\Obsidian Vault\\Generated";
 			}
@@ -119,6 +130,9 @@ namespace CycleFlowGenerator {
 
 			ReadAllSteps();
 
+			Step cycleStart = new Step("CycleStart", boxHeight, getNextID(), "5", false, false, true, false);
+			allSteps.Add(cycleStart.text, cycleStart);
+
 			Step cycleFail = new Step("CycleFail", 300, 2000, getNextID(), "1", true, true, true, true);
 			allSteps.Add(cycleFail.text, cycleFail);
 
@@ -130,7 +144,8 @@ namespace CycleFlowGenerator {
 			ReadManualCommands();
 		}
 
-		public void ReadManualCommands() {
+		public void ReadManualCommands()
+		{
 			bool inFunction = false;
 			int openBrackets;
 			int closeBrackets;
@@ -190,6 +205,11 @@ namespace CycleFlowGenerator {
 						command = new ManualCommand();
 						command.name = cmdMatch.Groups[1].Value;
 						command.startingSteps = tempStartingSteps;
+						command.edges = new List<Edge>();
+						foreach(var step in tempStartingSteps)
+						{
+							//command.edges.Add(new Edge())
+						}
 						manualCommands.Add(command);
 					}
 				}
@@ -203,7 +223,8 @@ namespace CycleFlowGenerator {
 		}
 
 		// Reads initial CycleStep declarations and creates Step objects
-		public void ReadAllSteps() {
+		public void ReadAllSteps()
+		{
 			string line;
 			Regex rx = new Regex(@"(\w+)(,)");
 			Regex rx2 = new Regex(@"(\w+)(;)");
@@ -214,39 +235,47 @@ namespace CycleFlowGenerator {
 
 			excludedSteps = File.ReadAllLines("../../ExcludedSteps.txt").ToList();
 
-			for(fileInd = 0; fileInd < lines.Length; fileInd++) { 
+			for(fileInd = 0; fileInd < lines.Length; fileInd++)
+			{
 				line = lines[fileInd];
 				Console.WriteLine(line);
 
 				if(line == null) return;
-				if(line.Contains("public CycleStep")) { 
+				if(line.Contains("public CycleStep"))
+				{
 					inSteps = true;
 				}
-				if(inSteps) {
+				if(inSteps)
+				{
 					//Console.WriteLine(line);
 					if(line == null) return;
 					matches = rx.Matches(line);
-					foreach(Match match in matches) {
+					foreach(Match match in matches)
+					{
 						Console.WriteLine(match.Groups[1].Value);
 						if(match.Groups[1].Value[0] == '/') break;
-						if(!allSteps.ContainsKey(match.Groups[1].Value) && !excludedSteps.Contains(match.Groups[1].Value)) {
-							Step step = new Step(match.Groups[1].Value, boxHeight, getNextID(), GetRandomColor(), false, false, true, false); ;
+						if(!allSteps.ContainsKey(match.Groups[1].Value) && !excludedSteps.Contains(match.Groups[1].Value))
+						{
+							Step step = new Step(match.Groups[1].Value, boxHeight, getNextID(), GetRandomColor(), false, false, true, false);
 
 							allSteps.Add(step.text, step);
 						}
-							
+
 					}
 					matches = rx2.Matches(line);
-					foreach(Match match in matches) {
+					foreach(Match match in matches)
+					{
 						Console.WriteLine(match.Groups[1].Value);
 						if(match.Groups[1].Value[0] == '/') break;
-						if(!allSteps.ContainsKey(match.Groups[1].Value)) {
+						if(!allSteps.ContainsKey(match.Groups[1].Value))
+						{
 							Step step = new Step(match.Groups[1].Value, boxHeight, getNextID(), GetRandomColor(), false, false, true, false);
 							allSteps.Add(step.text, step);
 						}
 
 					}
-					if(line.Contains(';')) {
+					if(line.Contains(';'))
+					{
 						break;
 					}
 
@@ -256,70 +285,108 @@ namespace CycleFlowGenerator {
 		}
 
 		// Searches _Passed or _Failed for next step in cycle
-		private void FindNextStep(Step step, bool pass, int brackets, int fileInd) {
+		private void FindNextStep(Step step, bool pass, int brackets, int fileInd)
+		{
 			int openBrackets = brackets;
 			int closeBrackets = 0;
 			bool inFunction = true;
 			string line;
 			Regex rxStart = new Regex(@"(\w+)(\.Start\(\);)");
+			Regex rxCycleStart = new Regex(@"(CycleStart\()([\s\S]+)?\)");
 			Regex rxCyclePass = new Regex(@"(CyclePass\()([\s\S]+)?\)");
 			Regex rxCycleFail = new Regex(@"(CycleFail\()([\s\S]+)?\)");
 			MatchCollection matches;
 
-			while(inFunction) {
-				if(fileInd < lines.Length) {
+			while(inFunction)
+			{
+				if(fileInd < lines.Length)
+				{
 					fileInd++;
 					line = lines[fileInd];
-				} else break;
+				}
+				else break;
 				//Console.WriteLine("line in function: " + line);
-				for(int i = 0; i < line.Length; i++) {
+				for(int i = 0; i < line.Length; i++)
+				{
 					if(line[i] == '{') openBrackets++;
 					if(line[i] == '}') closeBrackets++;
 				}
 				if(openBrackets == closeBrackets && openBrackets > 0) inFunction = false;
 
+				// CycleStart found
+				if(rxCycleStart.IsMatch(line))
+				{
+					Console.WriteLine("adding: CycleStart");
+					if(pass)
+					{
+						step.rightChildren.Add(allSteps["CycleStart"]);
+					}
+					else
+					{
+						step.leftChildren.Add(allSteps["CycleStart"]);
+					}
+				}
+
 				// CyclePass found
-				if(rxCyclePass.IsMatch(line)) {
+				if(rxCyclePass.IsMatch(line))
+				{
 					Console.WriteLine("adding: CyclePass");
-					if(pass) {
+					if(pass)
+					{
 						step.rightChildren.Add(allSteps["CyclePass"]);
-					} else {
+					}
+					else
+					{
 						step.leftChildren.Add(allSteps["CyclePass"]);
 					}
-
 				}
 
 				// CycleFail found
-				if(rxCycleFail.IsMatch(line)) {
+				if(rxCycleFail.IsMatch(line))
+				{
 					Console.WriteLine("adding: CycleFail");
-					if(pass) {
+					if(pass)
+					{
 						step.rightChildren.Add(allSteps["CycleFail"]);
-					} else {
+					}
+					else
+					{
 						step.leftChildren.Add(allSteps["CycleFail"]);
 					}
 				}
 
 				// Step.Start() found
 				matches = rxStart.Matches(line);
-				foreach(Match match in matches) {
+				foreach(Match match in matches)
+				{
 					//Console.WriteLine(match.Groups[1].Value);
-					if(match.Groups[1].Value == "CycleComplete") {
+					if(match.Groups[1].Value == "CycleComplete")
+					{
 						return;
 					}
 					if(match.Groups[1].Value[0] == '/') break;
 					Console.WriteLine("adding: " + match.Groups[1].Value);
 
 					// Add found step to list of children
-					if(pass) {
-						try {
+					if(pass)
+					{
+						try
+						{
 							step.rightChildren.Add(allSteps[match.Groups[1].Value]);
-						} catch(Exception e) {
+						}
+						catch(Exception e)
+						{
 							continue;
 						}
-					} else {
-						try {
+					}
+					else
+					{
+						try
+						{
 							step.leftChildren.Add(allSteps[match.Groups[1].Value]);
-						} catch(Exception e) {
+						}
+						catch(Exception e)
+						{
 							continue;
 						}
 					}
@@ -332,8 +399,39 @@ namespace CycleFlowGenerator {
 			}
 		}
 
+		public void ParseCycleStart(Step step)
+		{
+			if(step.parsed) return;
+			step.parsed = true;
+			int fileInd;
+			string line;
+			Regex rxCycleStart = new Regex(@"(CycleStart\()([\s\S]+)?\)");
+
+			Console.WriteLine("looking for: CycleStart");
+
+			for(fileInd = 0; fileInd < lines.Length; fileInd++)
+			{
+				line = lines[fileInd];
+
+				if(rxCycleStart.IsMatch(line))
+				{
+					Console.WriteLine("line: " + line);
+					if(line.Contains('{'))
+					{
+						FindNextStep(step, true, 1, fileInd);
+					}
+					else
+					{
+						FindNextStep(step, true, 0, fileInd);
+					}
+					break;
+				}
+			}
+		}
+
 		// Searches file for a step's _Passed and _Failed function
-		public void Parse(Step step) {
+		public void Parse(Step step)
+		{
 			if(step.parsed) return;
 			step.parsed = true;
 			string passFunction = step.text + "_Passed(";
@@ -343,15 +441,20 @@ namespace CycleFlowGenerator {
 
 			Console.WriteLine("looking for: " + passFunction);
 
-			for(fileInd = 0; fileInd < lines.Length; fileInd++){
+			for(fileInd = 0; fileInd < lines.Length; fileInd++)
+			{
 				line = lines[fileInd];
 
 				Regex passReg = new Regex(@"\s" + Regex.Escape(passFunction));
-				if(passReg.IsMatch(line)) {
+				if(passReg.IsMatch(line))
+				{
 					Console.WriteLine("line: " + line);
-					if(line.Contains('{')) {
+					if(line.Contains('{'))
+					{
 						FindNextStep(step, true, 1, fileInd);
-					} else {
+					}
+					else
+					{
 						FindNextStep(step, true, 0, fileInd);
 					}
 					break;
@@ -360,14 +463,19 @@ namespace CycleFlowGenerator {
 
 			Console.WriteLine("looking for: " + failFunction);
 
-			for(fileInd = 0; fileInd < lines.Length; fileInd++) {
+			for(fileInd = 0; fileInd < lines.Length; fileInd++)
+			{
 				line = lines[fileInd];
 
 				Regex failReg = new Regex(@"\s" + Regex.Escape(failFunction));
-				if(failReg.IsMatch(line)) {
-					if(line.Contains('{')) {
+				if(failReg.IsMatch(line))
+				{
+					if(line.Contains('{'))
+					{
 						FindNextStep(step, false, 1, fileInd);
-					} else {
+					}
+					else
+					{
 						FindNextStep(step, false, 0, fileInd);
 					}
 					break;
@@ -376,17 +484,19 @@ namespace CycleFlowGenerator {
 
 		}
 
-		private int PlaceNodes(Step step) {
+		private int PlaceNodes(Step step)
+		{
 			if(step.visited) return step.x;
 			step.visited = true;
-			for(int i = 0; i < step.leftChildren.Count; i++) {
-				if(step.leftChildren[i].placed) {
-
-				} else {
+			for(int i = 0; i < step.leftChildren.Count; i++)
+			{
+				if(!step.leftChildren[i].placed)
+				{ 
 					step.leftChildren[i].x = step.x - offsetX + (offsetX * 2 * i);
 					step.leftChildren[i].y = step.y + offsetY;
 					step.leftChildren[i].placed = true;
-					if(step.leftChildren[i].y > lowestY) {
+					if(step.leftChildren[i].y > lowestY)
+					{
 						lowestY = step.leftChildren[i].y;
 						lowestX = step.leftChildren[i].x;
 					}
@@ -398,14 +508,15 @@ namespace CycleFlowGenerator {
 				totalEdges++;
 			}
 
-			for(int i = 0; i < step.rightChildren.Count; i++) {
-				if(step.rightChildren[i].placed) {
-
-				} else {
+			for(int i = 0; i < step.rightChildren.Count; i++)
+			{
+				if(!step.rightChildren[i].placed)
+				{
 					step.rightChildren[i].x = step.x + offsetX + (offsetX * 2 * i);
 					step.rightChildren[i].y = step.y + offsetY;
 					step.rightChildren[i].placed = true;
-					if(step.rightChildren[i].y > lowestY) {
+					if(step.rightChildren[i].y > lowestY)
+					{
 						lowestY = step.rightChildren[i].y;
 						lowestX = step.rightChildren[i].x;
 					}
@@ -423,7 +534,8 @@ namespace CycleFlowGenerator {
 		}
 
 		// Iterate through steps and write to canvas file
-		private void WriteToCanvas(string entryPoint) {
+		private void WriteToCanvas(string entryPoint)
+		{
 			writer.Write("{\n\t\"nodes\":[\n");
 
 			if(entryPoint != null)
@@ -441,7 +553,8 @@ namespace CycleFlowGenerator {
 
 			var placedSteps = allSteps.Where(s => s.Value.placed).ToList();
 			//foreach(var step in placedSteps) {
-			for(int i = 0; i < placedSteps.Count; i++) { 
+			for(int i = 0; i < placedSteps.Count; i++)
+			{
 				var step = placedSteps[i];
 				if(step.Value.placed)
 				{
@@ -467,7 +580,8 @@ namespace CycleFlowGenerator {
 			{
 				numEdges += step.Value.edges.Count;
 			}
-			foreach(var step in placedSteps) {
+			foreach(var step in placedSteps)
+			{
 				if(step.Value.placed)
 				{
 					for(int j = 0; j < step.Value.edges.Count; j++)
@@ -475,9 +589,9 @@ namespace CycleFlowGenerator {
 						Edge edge = step.Value.edges[j];
 
 						writer.Write("\t\t{\"id\":\"" + edge.id.ToString("X16"));
-						writer.Write("\",\"fromNode\":\"" + edge.from.id.ToString("X16"));
+						writer.Write("\",\"fromNode\":\"" + edge.from);
 						writer.Write("\",\"fromSide\":\"" + edge.fromSide);
-						writer.Write("\",\"toNode\":\"" + edge.to.id.ToString("X16"));
+						writer.Write("\",\"toNode\":\"" + edge.to);
 						writer.Write("\",\"toSide\":\"" + edge.toSide);
 						writer.Write("\",\"label\":\"" + edge.label + "\"}");
 						edges++;
@@ -503,13 +617,18 @@ namespace CycleFlowGenerator {
 			}
 		}
 
-		public string Generate() {
+		public string Generate()
+		{
 			int parentX = 0;
 
 			ReadAllSteps();
 
-			foreach(var step in allSteps) {
-				Parse(step.Value);
+			foreach(var step in allSteps)
+			{
+				if(step.Key == "CycleStart")
+					ParseCycleStart(step.Value);
+				else
+					Parse(step.Value);
 			}
 
 			List<string> toRemove = new List<string>();
@@ -533,7 +652,8 @@ namespace CycleFlowGenerator {
 
 			printAllSteps();
 
-			foreach(var step in startingSteps) {
+			foreach(var step in startingSteps)
+			{
 				step.Value.x = parentX;
 				step.Value.y = 0;
 				parentX = PlaceNodes(step.Value) + 1500;
@@ -564,23 +684,28 @@ namespace CycleFlowGenerator {
 
 				WriteToCanvas(cmd.name);
 			}
-			
+
 			return canvasPath;
 		}
 
-		public void printAllSteps() {
-			foreach(var step in allSteps) {
+		public void printAllSteps()
+		{
+			foreach(var step in allSteps)
+			{
 				Console.WriteLine(step.Value.text);
-				for(int i = 0; i < step.Value.leftChildren.Count; i++) {
+				for(int i = 0; i < step.Value.leftChildren.Count; i++)
+				{
 					Console.WriteLine("\t" + step.Value.leftChildren[i].text);
 				}
-				for(int i = 0; i < step.Value.rightChildren.Count; i++) {
+				for(int i = 0; i < step.Value.rightChildren.Count; i++)
+				{
 					Console.WriteLine("\t" + step.Value.rightChildren[i].text);
 				}
 			}
 		}
 
-		public int getNextID() {
+		public int getNextID()
+		{
 			nextID++;
 			return nextID;
 		}
@@ -589,9 +714,11 @@ namespace CycleFlowGenerator {
 
 
 
-	internal class Program {
+	internal class Program
+	{
 
-		static void Main(string[] args) {
+		static void Main(string[] args)
+		{
 			string classFolder, flowFile;
 
 			Console.Write("Enter path to Classes folder: ");
