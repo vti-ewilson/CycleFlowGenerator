@@ -374,6 +374,7 @@ namespace CycleFlowGenerator
 			}
 		}
 
+		// Find list of steps that start within CycleStart()
 		public void ParseCycleStart(Step step)
 		{
 			if(step.parsed) return;
@@ -465,6 +466,7 @@ namespace CycleFlowGenerator
 			step.visited = true;
 			step.placed = true;
 
+			// Place entry point starting steps (bottom steps)
 			for(int i = 0; i < step.entryStartingSteps.Count; i++)
 			{
 				if(!step.entryStartingSteps[i].placed)
@@ -484,6 +486,7 @@ namespace CycleFlowGenerator
 				totalEdges++;
 			}
 
+			// Place left children
 			for(int i = 0; i < step.leftChildren.Count; i++)
 			{
 				if(!step.leftChildren[i].placed)
@@ -504,6 +507,7 @@ namespace CycleFlowGenerator
 				totalEdges++;
 			}
 
+			// Place right children
 			for(int i = 0; i < step.rightChildren.Count; i++)
 			{
 				if(!step.rightChildren[i].placed)
